@@ -14,10 +14,12 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: any) {
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user) {
-      throw new UnauthorizedException();
-    }
-    return user;
+    return {
+      id: payload.sub,
+      userId: payload.sub,
+      email: payload.email,
+      roles: payload.roles || [],
+      permissions: payload.permissions || [],
+    };
   }
 }

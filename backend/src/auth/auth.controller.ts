@@ -82,4 +82,12 @@ export class AuthController {
   getProfile(@CurrentUser() user: any) {
     return user;
   }
+
+  @Get('permissions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get permissions of the current user' })
+  getPermissions(@CurrentUser() user: any) {
+    return this.authService.getPermissions(user.id);
+  }
 }

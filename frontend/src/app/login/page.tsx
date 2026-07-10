@@ -1,19 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('loading');
-    
+
     try {
       const res = await fetch('http://localhost:3000/auth/login', {
         method: 'POST',
@@ -22,18 +23,19 @@ export default function Login() {
       });
 
       const data = await res.json();
-      
+
       if (res.ok) {
         setStatus('success');
         // Save tokens to localStorage or context
         localStorage.setItem('accessToken', data.accessToken);
         localStorage.setItem('refreshToken', data.refreshToken);
         setMessage('Successfully logged in! Redirecting...');
-        // Redirect to dashboard (to be implemented)
+        // Redirect to admin dashboard
         setTimeout(() => {
-          window.location.href = '/dashboard';
+          window.location.href = '/admin/users';
         }, 1500);
       } else {
+
         setStatus('error');
         setMessage(data.message || 'Invalid credentials.');
       }
@@ -92,13 +94,20 @@ export default function Login() {
                   </div>
                   <input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-3 border border-neutral-700 rounded-lg bg-neutral-950 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors"
+                    className="block w-full pl-10 pr-10 py-3 border border-neutral-700 rounded-lg bg-neutral-950 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors"
                     placeholder="••••••••"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-neutral-500 hover:text-neutral-300 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
                 </div>
               </div>
 
