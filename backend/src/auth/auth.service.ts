@@ -35,6 +35,13 @@ export class AuthService {
       },
     });
 
+    const userRole = await this.prisma.role.findUnique({ where: { name: 'User' } });
+    if (userRole) {
+      await this.prisma.userRole.create({
+        data: { userId: user.id, roleId: userRole.id }
+      });
+    }
+
     const verifyToken = await this.createHashedTokenRecord(user.id, 'VERIFICATION');
     await this.mailService.sendVerificationEmail(user, verifyToken);
 
@@ -45,6 +52,10 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account is not active');
     }
 
     const passwordMatches = await argon2.verify(user.passwordHash, dto.password);
@@ -68,7 +79,6 @@ export class AuthService {
   }
 
   async refresh(userId: string, refreshToken: string) {
-    // Cleanup expired refresh tokens
     await this.prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: new Date() } } });
 
     const tokens = await this.prisma.refreshToken.findMany({ where: { userId, isRevoked: false } });
@@ -106,7 +116,6 @@ export class AuthService {
       data: { emailVerified: true },
     });
 
-    // Cleanup all verification tokens for this user
     await this.prisma.verificationToken.deleteMany({ where: { userId: record.userId } });
 
     return { success: true, message: 'Email successfully verified' };
@@ -114,11 +123,10 @@ export class AuthService {
 
   async resendVerification(dto: ResendVerificationDto) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (!user) return { success: true }; // Don't reveal if user exists
+    if (!user) return { success: true }; 
 
     if (user.emailVerified) throw new BadRequestException('Email is already verified');
 
-    // Cleanup old ones
     await this.prisma.verificationToken.deleteMany({ where: { userId: user.id } });
 
     const verifyToken = await this.createHashedTokenRecord(user.id, 'VERIFICATION');
@@ -131,7 +139,6 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) return { success: true, message: 'If the email exists, a reset link has been sent' };
 
-    // Cleanup old ones
     await this.prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
 
     const resetToken = await this.createHashedTokenRecord(user.id, 'RESET');
@@ -160,11 +167,40 @@ export class AuthService {
       data: { passwordHash },
     });
 
-    // Cleanup token and refresh tokens so user has to login again
     await this.prisma.passwordResetToken.deleteMany({ where: { userId: record.userId } });
     await this.prisma.refreshToken.deleteMany({ where: { userId: record.userId } });
 
     return { success: true, message: 'Password successfully reset' };
+  }
+
+  async getPermissions(userId: string) {
+    const userWithRoles = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: {
+          include: {
+            role: {
+              include: {
+                permissions: {
+                  include: { permission: true }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!userWithRoles) throw new NotFoundException('User not found');
+
+    const permissions = new Set<string>();
+    for (const userRole of userWithRoles.roles) {
+      for (const rolePerm of userRole.role.permissions) {
+        permissions.add(rolePerm.permission.name);
+      }
+    }
+
+    return Array.from(permissions);
   }
 
   private parseToken(base64Token: string) {
@@ -202,16 +238,52 @@ export class AuthService {
   }
 
   private async generateTokens(userId: string) {
+    const userWithRoles = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: {
+          include: {
+            role: {
+              include: {
+                permissions: {
+                  include: { permission: true }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const userEmail = userWithRoles?.email || '';
+    const roles = userWithRoles?.roles.map(ur => ur.role.name) || [];
+    const permissions = new Set<string>();
+    
+    if (userWithRoles) {
+      for (const userRole of userWithRoles.roles) {
+        for (const rolePerm of userRole.role.permissions) {
+          permissions.add(rolePerm.permission.name);
+        }
+      }
+    }
+
+    const payload = {
+      sub: userId,
+      email: userEmail,
+      roles,
+      permissions: Array.from(permissions)
+    };
+
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(
-        { sub: userId },
+        payload,
         {
           secret: process.env.JWT_ACCESS_SECRET || 'your-access-token-secret-key',
           expiresIn: (process.env.JWT_ACCESS_EXPIRATION || '15m') as any,
         },
       ),
       this.jwtService.signAsync(
-        { sub: userId },
+        { sub: userId }, // Keep refresh token simple
         {
           secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-token-secret-key',
           expiresIn: (process.env.JWT_REFRESH_EXPIRATION || '30d') as any,
