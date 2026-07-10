@@ -1,6 +1,6 @@
-import { PrismaService } from '../prisma/prisma.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PermissionsController } from './permissions.controller';
+import { PermissionsService } from './permissions.service';
 
 describe('PermissionsController', () => {
   let controller: PermissionsController;
@@ -8,6 +8,7 @@ describe('PermissionsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PermissionsController],
+      providers: [{ provide: PermissionsService, useValue: {} }],
     }).compile();
 
     controller = module.get<PermissionsController>(PermissionsController);
