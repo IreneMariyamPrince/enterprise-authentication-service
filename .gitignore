@@ -1,0 +1,30 @@
+# dependencies
+node_modules
+
+# builds
+dist
+.next
+build
+
+# environment
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+
+# coverage
+coverage
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# prisma
+prisma/dev.db
