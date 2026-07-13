@@ -10,6 +10,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UAParser } from 'ua-parser-js';
 
 @Injectable()
 export class AuthService {
@@ -19,7 +20,7 @@ export class AuthService {
     private mailService: MailService
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, userAgent?: string, ipAddress?: string) {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (exists) {
       throw new BadRequestException('Email already in use');
@@ -45,10 +46,10 @@ export class AuthService {
     const verifyToken = await this.createHashedTokenRecord(user.id, 'VERIFICATION');
     await this.mailService.sendVerificationEmail(user, verifyToken);
 
-    return this.generateTokens(user.id);
+    return this.generateTokens(user.id, userAgent, ipAddress);
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, userAgent?: string, ipAddress?: string) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -68,33 +69,89 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    return this.generateTokens(user.id);
+    console.log('[AUDIT] User logged in', { userId: user.id, email: user.email, ipAddress });
+
+    return this.generateTokens(user.id, userAgent, ipAddress);
   }
 
-  async logout(userId: string) {
-    await this.prisma.refreshToken.deleteMany({
-      where: { userId },
+  async logout(userId: string, sessionId: string) {
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { revokedAt: new Date() }
     });
+
+    console.log('[AUDIT] User logged out', { userId, sessionId });
+
     return { success: true };
   }
 
-  async refresh(userId: string, refreshToken: string) {
-    await this.prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  async refresh(userId: string, refreshToken: string, sessionId: string, userAgent?: string, ipAddress?: string) {
+    // Delete globally expired sessions automatically
+    await this.prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
 
-    const tokens = await this.prisma.refreshToken.findMany({ where: { userId, isRevoked: false } });
-    let validTokenFound = false;
-    for (const token of tokens) {
-      if (await argon2.verify(token.hashedToken, refreshToken)) {
-        validTokenFound = true;
-        break;
-      }
+    const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
+    if (!session || session.userId !== userId) {
+      throw new UnauthorizedException('Invalid session');
     }
-    
-    if (!validTokenFound) {
+
+    if (session.revokedAt) {
+      throw new UnauthorizedException('Session has been revoked');
+    }
+
+    if (session.expiresAt < new Date()) {
+      throw new UnauthorizedException('Session has expired');
+    }
+
+    const isValid = await argon2.verify(session.refreshTokenHash, refreshToken);
+    if (!isValid) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    return this.generateTokens(userId);
+    // Update lastActiveAt
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { lastActiveAt: new Date() }
+    });
+
+    // Instead of reusing the old refresh token, we generate new tokens and create a new session
+    // and revoke the old one (Refresh Token Rotation). Or we could just issue a new access token.
+    // The requirements say: "Update lastActiveAt. Reject revoked sessions. Reject expired sessions."
+    // Let's generate a new Access Token and return the existing Refresh Token, keeping the session active.
+
+    const userWithRoles = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } }
+      }
+    });
+
+    const roles = userWithRoles?.roles.map(ur => ur.role.name) || [];
+    const permissions = new Set<string>();
+    if (userWithRoles) {
+      for (const userRole of userWithRoles.roles) {
+        for (const rolePerm of userRole.role.permissions) {
+          permissions.add(rolePerm.permission.name);
+        }
+      }
+    }
+
+    const payload = {
+      sub: userId,
+      email: userWithRoles?.email,
+      roles,
+      permissions: Array.from(permissions),
+      sessionId
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload, {
+      secret: process.env.JWT_ACCESS_SECRET || 'your-access-token-secret-key',
+      expiresIn: (process.env.JWT_ACCESS_EXPIRATION || '15m') as any,
+    });
+
+    return {
+      accessToken,
+      refreshToken, // Returning the same refresh token
+    };
   }
 
   async verifyEmail(dto: VerifyEmailDto) {
@@ -168,7 +225,12 @@ export class AuthService {
     });
 
     await this.prisma.passwordResetToken.deleteMany({ where: { userId: record.userId } });
-    await this.prisma.refreshToken.deleteMany({ where: { userId: record.userId } });
+    await this.prisma.session.updateMany({ 
+      where: { userId: record.userId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+
+    console.log('[AUDIT] User reset password (all sessions revoked)', { userId: record.userId });
 
     return { success: true, message: 'Password successfully reset' };
   }
@@ -237,7 +299,7 @@ export class AuthService {
     return Buffer.from(`${tokenId}:${rawSecret}`).toString('base64url');
   }
 
-  private async generateTokens(userId: string) {
+  private async generateTokens(userId: string, userAgent?: string, ipAddress?: string) {
     const userWithRoles = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -267,11 +329,21 @@ export class AuthService {
       }
     }
 
+    // Parse User Agent
+    const parser = new UAParser(userAgent || '');
+    const browser = parser.getBrowser().name || 'Unknown Browser';
+    const os = parser.getOS().name || 'Unknown OS';
+    const deviceName = parser.getDevice().model ? `${parser.getDevice().model} (${os})` : `${os} on ${browser}`;
+
+    // Generate Session ID upfront
+    const sessionId = crypto.randomUUID();
+
     const payload = {
       sub: userId,
       email: userEmail,
       roles,
-      permissions: Array.from(permissions)
+      permissions: Array.from(permissions),
+      sessionId
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -283,7 +355,7 @@ export class AuthService {
         },
       ),
       this.jwtService.signAsync(
-        { sub: userId }, // Keep refresh token simple
+        { sub: userId, sessionId }, // Include sessionId in refresh token to bind it
         {
           secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-token-secret-key',
           expiresIn: (process.env.JWT_REFRESH_EXPIRATION || '30d') as any,
@@ -291,12 +363,19 @@ export class AuthService {
       ),
     ]);
 
-    const hashedRefreshToken = await argon2.hash(refreshToken);
-    await this.prisma.refreshToken.create({
+    const refreshTokenHash = await argon2.hash(refreshToken);
+    
+    await this.prisma.session.create({
       data: {
-        hashedToken: hashedRefreshToken,
+        id: sessionId,
         userId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        refreshTokenHash,
+        deviceName,
+        browser,
+        os,
+        ipAddress,
+        userAgent,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
       },
     });
 

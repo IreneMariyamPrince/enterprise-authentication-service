@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Get, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, HttpCode, HttpStatus, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -18,15 +19,19 @@ export class AuthController {
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    const userAgent = req.headers['user-agent'] as string;
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    return this.authService.register(dto, userAgent, ipAddress);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login user' })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Req() req: Request) {
+    const userAgent = req.headers['user-agent'] as string;
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    return this.authService.login(dto, userAgent, ipAddress);
   }
 
   @Post('verify-email')
@@ -62,8 +67,10 @@ export class AuthController {
   @UseGuards(JwtRefreshGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Refresh access token' })
-  async refresh(@CurrentUser() user: any) {
-    return this.authService.refresh(user.id, user.refreshToken);
+  async refresh(@CurrentUser() user: any, @Req() req: Request) {
+    const userAgent = req.headers['user-agent'] as string;
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    return this.authService.refresh(user.id, user.refreshToken, user.sessionId, userAgent, ipAddress);
   }
 
   @Post('logout')
@@ -72,7 +79,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout user' })
   async logout(@CurrentUser() user: any) {
-    return this.authService.logout(user.id);
+    return this.authService.logout(user.id, user.sessionId);
   }
 
   @Get('me')
