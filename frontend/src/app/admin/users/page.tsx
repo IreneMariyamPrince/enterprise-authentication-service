@@ -113,9 +113,14 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button className="text-indigo-400 hover:text-indigo-300 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                      Edit
-                    </button>
+                    <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <a href={`/admin/users/${user.id}/sessions`} className="text-emerald-400 hover:text-emerald-300 text-sm font-medium">
+                        Sessions
+                      </a>
+                      <button className="text-indigo-400 hover:text-indigo-300 text-sm font-medium">
+                        Edit
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

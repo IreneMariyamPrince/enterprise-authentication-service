@@ -8,9 +8,10 @@ import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { UserRolesModule } from './user-roles/user-roles.module';
 import { UsersModule } from './users/users.module';
+import { SessionModule } from './session/session.module';
 
 @Module({
-  imports: [PrismaModule, MailModule, AuthModule, RolesModule, PermissionsModule, UserRolesModule, UsersModule],
+  imports: [PrismaModule, MailModule, AuthModule, RolesModule, PermissionsModule, UserRolesModule, UsersModule, SessionModule],
   controllers: [AppController],
   providers: [AppService],
 })
