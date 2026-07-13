@@ -50,6 +50,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         <div className="p-4 border-t border-neutral-800 space-y-2">
+          <Link href="/settings/security">
+            <div className="flex items-center space-x-3 px-4 py-3 w-full rounded-lg text-neutral-400 hover:bg-neutral-800/50 hover:text-white transition-colors cursor-pointer">
+              <Shield className="w-5 h-5" />
+              <span>Security & MFA</span>
+            </div>
+          </Link>
           <Link href="/settings/sessions">
             <div className="flex items-center space-x-3 px-4 py-3 w-full rounded-lg text-neutral-400 hover:bg-neutral-800/50 hover:text-white transition-colors cursor-pointer">
               <MonitorSmartphone className="w-5 h-5" />
