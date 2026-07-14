@@ -5,12 +5,17 @@ import * as OTPAuth from 'otpauth';
 import * as QRCode from 'qrcode';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditCategory, AuditStatus } from '@prisma/client';
 
 @Injectable()
 export class MfaService {
   private encryptionKey: Buffer;
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditService
+  ) {
     const keyString = process.env.MFA_ENCRYPTION_KEY || 'default-secret-key-must-be-32-chars';
     this.encryptionKey = crypto.scryptSync(keyString, 'salt', 32);
   }
@@ -61,6 +66,15 @@ export class MfaService {
       where: { id: mfa.id },
       data: { failedAttempts, lockedUntil }
     });
+
+    this.auditService.audit({
+      actorId: mfa.userId,
+      action: AuditAction.MFA_LOGIN_FAILED,
+      category: AuditCategory.MFA,
+      status: AuditStatus.FAILED,
+      metadata: { failedAttempts, locked: !!lockedUntil }
+    });
+
     if (lockedUntil) {
       throw new ForbiddenException(`MFA locked for 10 minutes due to 5 failed attempts.`);
     } else {
@@ -151,7 +165,12 @@ export class MfaService {
       }
     });
 
-    console.log('[AUDIT] MFA_ENABLED', { userId });
+    this.auditService.audit({
+      actorId: userId,
+      action: AuditAction.MFA_ENABLED,
+      category: AuditCategory.MFA,
+      status: AuditStatus.SUCCESS
+    });
 
     return { recoveryCodes: recovery.plain };
   }
@@ -183,7 +202,15 @@ export class MfaService {
       data: { failedAttempts: 0, lockedUntil: null, lastVerifiedAt: new Date() }
     });
 
-    console.log('[AUDIT] MFA_VERIFIED', { userId });
+    // We already log MFA_LOGIN_SUCCESS in AuthService, so we just log a generic VERIFIED here or skip it.
+    // We can log it as MFA_LOGIN_SUCCESS to be consistent.
+    this.auditService.audit({
+      actorId: userId,
+      action: AuditAction.MFA_LOGIN_SUCCESS,
+      category: AuditCategory.MFA,
+      status: AuditStatus.SUCCESS
+    });
+
     return true;
   }
 
@@ -204,7 +231,13 @@ export class MfaService {
       }
     });
 
-    console.log('[AUDIT] MFA_DISABLED', { userId });
+    this.auditService.audit({
+      actorId: userId,
+      action: AuditAction.MFA_DISABLED,
+      category: AuditCategory.MFA,
+      status: AuditStatus.SUCCESS
+    });
+
     return { success: true };
   }
 
@@ -243,7 +276,14 @@ export class MfaService {
       }
     });
 
-    console.log('[AUDIT] RECOVERY_CODE_USED', { userId, remaining: hashedCodes.length });
+    this.auditService.audit({
+      actorId: userId,
+      action: AuditAction.RECOVERY_CODE_USED,
+      category: AuditCategory.MFA,
+      status: AuditStatus.SUCCESS,
+      metadata: { remaining: hashedCodes.length }
+    });
+
     return true;
   }
 
@@ -261,7 +301,13 @@ export class MfaService {
       data: { backupCodesHash: recovery.hashed }
     });
 
-    console.log('[AUDIT] RECOVERY_CODES_REGENERATED', { userId });
+    this.auditService.audit({
+      actorId: userId,
+      action: AuditAction.RECOVERY_CODES_REGENERATED,
+      category: AuditCategory.MFA,
+      status: AuditStatus.SUCCESS
+    });
+
     return { recoveryCodes: recovery.plain };
   }
 
@@ -290,7 +336,14 @@ export class MfaService {
       }
     });
 
-    console.log('[AUDIT] MFA_DISABLED by Admin', { targetUserId });
+    this.auditService.audit({
+      targetUserId: targetUserId,
+      action: AuditAction.MFA_DISABLED,
+      category: AuditCategory.ADMIN,
+      status: AuditStatus.SUCCESS,
+      metadata: { reason: 'Admin reset' }
+    });
+
     return { success: true };
   }
 }

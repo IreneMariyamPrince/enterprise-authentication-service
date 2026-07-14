@@ -5,6 +5,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditCategory, AuditStatus } from '@prisma/client';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('user-roles')
@@ -12,7 +14,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('users/:userId/roles')
 export class UserRolesController {
-  constructor(private readonly userRolesService: UserRolesService) {}
+  constructor(
+    private readonly userRolesService: UserRolesService,
+    private readonly auditService: AuditService
+  ) {}
 
   @Get()
   @Permissions('roles.read')
@@ -24,8 +29,19 @@ export class UserRolesController {
   @Post()
   @Permissions('roles.update')
   @ApiOperation({ summary: 'Assign a role to a user' })
-  assignRole(@Param('userId') userId: string, @Body() dto: AssignRoleDto) {
-    return this.userRolesService.assignRole(userId, dto);
+  async assignRole(@Param('userId') userId: string, @Body() dto: AssignRoleDto, @CurrentUser() currentUser: any) {
+    const result = await this.userRolesService.assignRole(userId, dto);
+    
+    this.auditService.audit({
+      actorId: currentUser.id,
+      targetUserId: userId,
+      action: AuditAction.ROLE_ASSIGNED,
+      category: AuditCategory.USER,
+      status: AuditStatus.SUCCESS,
+      metadata: { roleId: dto.roleId }
+    });
+
+    return result;
   }
 
   @Delete(':roleId')
@@ -36,6 +52,17 @@ export class UserRolesController {
     @Param('roleId') roleId: string,
     @CurrentUser() currentUser: any
   ) {
-    return this.userRolesService.removeRole(userId, roleId, currentUser.id);
+    const result = this.userRolesService.removeRole(userId, roleId, currentUser.id);
+    
+    this.auditService.audit({
+      actorId: currentUser.id,
+      targetUserId: userId,
+      action: AuditAction.ROLE_REMOVED,
+      category: AuditCategory.USER,
+      status: AuditStatus.SUCCESS,
+      metadata: { roleId }
+    });
+
+    return result;
   }
 }
