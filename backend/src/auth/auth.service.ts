@@ -64,6 +64,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    const userMfa = await this.prisma.userMfa.findUnique({ where: { userId: user.id } });
+    if (userMfa?.enabled) {
+      const mfaToken = await this.jwtService.signAsync(
+        { sub: user.id, mfa: true, sessionId: null },
+        { secret: process.env.JWT_MFA_SECRET || 'your-mfa-token-secret-key', expiresIn: '5m' }
+      );
+      return { mfaRequired: true, mfaToken };
+    }
+
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
@@ -72,6 +81,17 @@ export class AuthService {
     console.log('[AUDIT] User logged in', { userId: user.id, email: user.email, ipAddress });
 
     return this.generateTokens(user.id, userAgent, ipAddress);
+  }
+
+  async completeMfaLogin(userId: string, userAgent?: string, ipAddress?: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+    });
+
+    console.log('[AUDIT] MFA_LOGIN_SUCCESS', { userId, ipAddress });
+
+    return this.generateTokens(userId, userAgent, ipAddress);
   }
 
   async logout(userId: string, sessionId: string) {

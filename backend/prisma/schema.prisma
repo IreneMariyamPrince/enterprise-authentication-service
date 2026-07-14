@@ -31,6 +31,7 @@ model User {
   verificationTokens  VerificationToken[]
   passwordResetTokens PasswordResetToken[]
   roles               UserRole[]
+  mfa                 UserMfa?
 }
 
 model Role {
@@ -120,4 +121,20 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model UserMfa {
+  id               String    @id @default(uuid())
+  userId           String    @unique
+  enabled          Boolean   @default(false)
+  encryptedSecret  String?
+  backupCodesHash  Json?
+  emailOtpEnabled  Boolean   @default(false)
+  lastVerifiedAt   DateTime?
+  failedAttempts   Int       @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
