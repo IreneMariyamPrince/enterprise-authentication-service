@@ -37,7 +37,7 @@ export class AuditController {
   @UseGuards(RolesGuard)
   @Roles('Super Admin')
   @ApiOperation({ summary: 'Export audit logs to CSV' })
-  async exportCsv(@Query() query: any, @Res() res: Response) {
+  async exportCsv(@Query() query: any, @Res() res: any) {
     // Retrieve up to 10,000 records for export to avoid memory issues
     query.limit = 10000;
     query.page = 1;

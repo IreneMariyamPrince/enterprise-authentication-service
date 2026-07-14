@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Shield, Key, LogOut, MonitorSmartphone } from 'lucide-react';
+import { Users, Shield, Key, LogOut, MonitorSmartphone, Activity } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
@@ -18,6 +18,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: 'Users', href: '/admin/users', icon: Users },
     { name: 'Roles', href: '/admin/roles', icon: Shield },
     { name: 'Permissions', href: '/admin/permissions', icon: Key },
+    { name: 'Audit Logs', href: '/admin/audit-logs', icon: Activity },
   ];
 
   return (
@@ -54,6 +55,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="flex items-center space-x-3 px-4 py-3 w-full rounded-lg text-neutral-400 hover:bg-neutral-800/50 hover:text-white transition-colors cursor-pointer">
               <Shield className="w-5 h-5" />
               <span>Security & MFA</span>
+            </div>
+          </Link>
+          <Link href="/settings/security/activity">
+            <div className="flex items-center space-x-3 px-4 py-3 w-full rounded-lg text-neutral-400 hover:bg-neutral-800/50 hover:text-white transition-colors cursor-pointer">
+              <Activity className="w-5 h-5" />
+              <span>Security Activity</span>
             </div>
           </Link>
           <Link href="/settings/sessions">

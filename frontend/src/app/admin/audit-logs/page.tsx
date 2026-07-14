@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldAlert, Download, Search, Filter, ChevronDown, ChevronUp, 
   Activity, AlertTriangle, Key, Users, UserCheck, Shield
@@ -18,6 +18,7 @@ interface AuditLog {
   ipAddress?: string;
   browser?: string;
   os?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any;
   createdAt: string;
   actor?: { firstName: string; lastName: string; email: string };
