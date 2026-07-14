@@ -11,13 +11,16 @@ import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UAParser } from 'ua-parser-js';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditCategory, AuditStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService, 
     private jwtService: JwtService,
-    private mailService: MailService
+    private mailService: MailService,
+    private auditService: AuditService
   ) {}
 
   async register(dto: RegisterDto, userAgent?: string, ipAddress?: string) {
@@ -46,21 +49,57 @@ export class AuthService {
     const verifyToken = await this.createHashedTokenRecord(user.id, 'VERIFICATION');
     await this.mailService.sendVerificationEmail(user, verifyToken);
 
+    this.auditService.audit({
+      actorId: user.id,
+      action: AuditAction.REGISTERED,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS,
+      ipAddress,
+      userAgent,
+      metadata: { email: user.email }
+    });
+
     return this.generateTokens(user.id, userAgent, ipAddress);
   }
 
   async login(dto: LoginDto, userAgent?: string, ipAddress?: string) {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) {
+      this.auditService.audit({
+        action: AuditAction.LOGIN_FAILED,
+        category: AuditCategory.AUTHENTICATION,
+        status: AuditStatus.FAILED,
+        ipAddress,
+        userAgent,
+        metadata: { email: dto.email, reason: 'Invalid credentials' }
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     if (user.status !== 'ACTIVE') {
+      this.auditService.audit({
+        actorId: user.id,
+        action: AuditAction.LOGIN_FAILED,
+        category: AuditCategory.AUTHENTICATION,
+        status: AuditStatus.FAILED,
+        ipAddress,
+        userAgent,
+        metadata: { email: dto.email, reason: 'Account is not active' }
+      });
       throw new UnauthorizedException('Account is not active');
     }
 
     const passwordMatches = await argon2.verify(user.passwordHash, dto.password);
     if (!passwordMatches) {
+      this.auditService.audit({
+        actorId: user.id,
+        action: AuditAction.LOGIN_FAILED,
+        category: AuditCategory.AUTHENTICATION,
+        status: AuditStatus.FAILED,
+        ipAddress,
+        userAgent,
+        metadata: { email: dto.email, reason: 'Invalid password' }
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -78,7 +117,15 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    console.log('[AUDIT] User logged in', { userId: user.id, email: user.email, ipAddress });
+    this.auditService.audit({
+      actorId: user.id,
+      action: AuditAction.LOGIN_SUCCESS,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS,
+      ipAddress,
+      userAgent,
+      metadata: { mfaEnabled: false }
+    });
 
     return this.generateTokens(user.id, userAgent, ipAddress);
   }
@@ -89,7 +136,14 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    console.log('[AUDIT] MFA_LOGIN_SUCCESS', { userId, ipAddress });
+    this.auditService.audit({
+      actorId: userId,
+      action: AuditAction.MFA_LOGIN_SUCCESS,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS,
+      ipAddress,
+      userAgent
+    });
 
     return this.generateTokens(userId, userAgent, ipAddress);
   }
@@ -100,7 +154,13 @@ export class AuthService {
       data: { revokedAt: new Date() }
     });
 
-    console.log('[AUDIT] User logged out', { userId, sessionId });
+    this.auditService.audit({
+      actorId: userId,
+      sessionId,
+      action: AuditAction.LOGOUT,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS
+    });
 
     return { success: true };
   }
@@ -168,6 +228,16 @@ export class AuthService {
       expiresIn: (process.env.JWT_ACCESS_EXPIRATION || '15m') as any,
     });
 
+    this.auditService.audit({
+      actorId: userId,
+      sessionId,
+      action: AuditAction.TOKEN_REFRESHED,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS,
+      ipAddress,
+      userAgent
+    });
+
     return {
       accessToken,
       refreshToken, // Returning the same refresh token
@@ -195,6 +265,13 @@ export class AuthService {
 
     await this.prisma.verificationToken.deleteMany({ where: { userId: record.userId } });
 
+    this.auditService.audit({
+      actorId: record.userId,
+      action: AuditAction.EMAIL_VERIFIED,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS
+    });
+
     return { success: true, message: 'Email successfully verified' };
   }
 
@@ -220,6 +297,13 @@ export class AuthService {
 
     const resetToken = await this.createHashedTokenRecord(user.id, 'RESET');
     await this.mailService.sendPasswordResetEmail(user, resetToken);
+
+    this.auditService.audit({
+      actorId: user.id,
+      action: AuditAction.PASSWORD_RESET_REQUESTED,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS
+    });
 
     return { success: true, message: 'If the email exists, a reset link has been sent' };
   }
@@ -250,7 +334,12 @@ export class AuthService {
       data: { revokedAt: new Date() }
     });
 
-    console.log('[AUDIT] User reset password (all sessions revoked)', { userId: record.userId });
+    this.auditService.audit({
+      actorId: record.userId,
+      action: AuditAction.PASSWORD_RESET_COMPLETED,
+      category: AuditCategory.AUTHENTICATION,
+      status: AuditStatus.SUCCESS
+    });
 
     return { success: true, message: 'Password successfully reset' };
   }

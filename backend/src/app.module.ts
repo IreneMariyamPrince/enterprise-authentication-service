@@ -10,9 +10,21 @@ import { UserRolesModule } from './user-roles/user-roles.module';
 import { UsersModule } from './users/users.module';
 import { SessionModule } from './session/session.module';
 import { MfaModule } from './mfa/mfa.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
-  imports: [PrismaModule, MailModule, AuthModule, RolesModule, PermissionsModule, UserRolesModule, UsersModule, SessionModule, MfaModule],
+  imports: [
+    PrismaModule, 
+    MailModule, 
+    AuthModule, 
+    RolesModule, 
+    PermissionsModule, 
+    UserRolesModule, 
+    UsersModule, 
+    SessionModule, 
+    MfaModule, 
+    AuditModule
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
