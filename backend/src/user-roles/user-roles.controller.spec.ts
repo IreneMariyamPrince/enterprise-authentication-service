@@ -1,3 +1,4 @@
+import { AuditService } from '../audit/audit.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserRolesController } from './user-roles.controller';
 import { UserRolesService } from './user-roles.service';
@@ -8,7 +9,8 @@ describe('UserRolesController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserRolesController],
-      providers: [{ provide: UserRolesService, useValue: {} }],
+      providers: [
+        { provide: AuditService, useValue: { audit: jest.fn() } },{ provide: UserRolesService, useValue: {} }],
     }).compile();
 
     controller = module.get<UserRolesController>(UserRolesController);
