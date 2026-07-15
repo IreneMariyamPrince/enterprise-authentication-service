@@ -1,3 +1,4 @@
+import { AuditService } from '../audit/audit.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +11,7 @@ describe('AuthService', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: AuditService, useValue: { audit: jest.fn() } },
         AuthService,
         { provide: PrismaService, useValue: {} },
         { provide: JwtService, useValue: {} },

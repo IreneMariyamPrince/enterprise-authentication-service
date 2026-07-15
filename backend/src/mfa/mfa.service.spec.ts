@@ -1,3 +1,4 @@
+import { AuditService } from '../audit/audit.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MfaService } from './mfa.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,6 +20,7 @@ describe('MfaService', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: AuditService, useValue: { audit: jest.fn() } },
         MfaService,
         { provide: PrismaService, useValue: mockPrismaService },
       ],
